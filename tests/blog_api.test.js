@@ -6,10 +6,24 @@ const assert = require('node:assert')
 const app = require('../app')
 const api = supertest(app)
 const helper = require('./test_helper')
+const User = require('../models/user')
+
+let token = ''
 
 beforeEach(async () => {
-  await Blog.deleteMany({})
+  await User.deleteMany({})
 
+  await api
+    .post('/api/users')
+    .send(helper.initialUser[0])
+
+  const login = await api.post('/api/login').send({
+    username: helper.initialUser[0].username, password: helper.initialUser[0].password
+  })
+
+  token = login.body.token
+
+  await Blog.deleteMany({})
   await Blog.insertMany(helper.initialBlogs)
 })
 
@@ -17,12 +31,13 @@ describe('when some initial blogs exists', () => {
   test('blogs are returned as json', async () => {
     await api
       .get('/api/blogs')
+      // .set('authorization', `Bearer ${token}`)
       .expect(200)
       .expect('Content-Type', /application\/json/)
   })
 
   test('blogs contain id', async () => {
-    const response = await api.get('/api/blogs')
+    const response = await api.get('/api/blogs') //.set('authorization', `Bearer ${token}`)
     const ids = response.body.map(r => r.id)
     assert.strictEqual(ids.length, helper.initialBlogs.length)
   })
@@ -75,6 +90,7 @@ describe('adding blogs', () => {
 
     await api
       .post('/api/blogs')
+      .set('authorization', `Bearer ${token}`)
       .send(newBlog)
       .expect(201)
       .expect('Content-Type', /application\/json/)
@@ -97,6 +113,7 @@ describe('adding blogs', () => {
 
     await api
       .post('/api/blogs')
+      .set('authorization', `Bearer ${token}`)
       .send(newBlog)
       .expect(201)
       .expect('Content-Type', /application\/json/)
@@ -117,6 +134,7 @@ describe('adding blogs', () => {
 
     await api
       .post('/api/blogs')
+      .set('authorization', `Bearer ${token}`)
       .send(newBlog)
       .expect(400)
 
@@ -134,6 +152,7 @@ describe('adding blogs', () => {
 
     await api
       .post('/api/blogs')
+      .set('authorization', `Bearer ${token}`)
       .send(newBlog)
       .expect(400)
 
@@ -157,19 +176,36 @@ describe('adding blogs', () => {
 
 describe('blog deletion', () => {
   test('succeeds with status code 204 if id is valid', async () => {
-    const blogsAtStart = await helper.blogsInDb()
-    const blogToDelete = blogsAtStart[0]
+    const blog = {
+      title: 'Blog for deletion',
+      author: 'Sami Laitinen',
+      url: 'www.test.fi',
+      likes: 0
+    }
 
     await api
-      .delete(`/api/blogs/${blogToDelete.id}`)
+      .post('/api/blogs')
+      .set('authorization', `Bearer ${token}`)
+      .send(blog)
+      .expect(201)
+      .expect('Content-Type', /application\/json/)
+
+    const response = await api.get('/api/blogs')
+    const blogForDelete = response.body.filter(b => b.title.includes('deletion'))[0]
+    console.log('id', blogForDelete.id)
+
+    await api
+      .delete(`/api/blogs/${blogForDelete.id}`)
+      .set('authorization', `Bearer ${token}`)
+      .send()
       .expect(204)
 
     const blogsAtEnd = await helper.blogsInDb()
 
     const titles = blogsAtEnd.map(r => r.title)
-    assert(!titles.includes(blogToDelete.title))
+    assert(!titles.includes(blogForDelete.title))
 
-    assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length - 1)
+    assert.strictEqual(blogsAtEnd.length, helper.initialBlogs.length)
   })
 })
 
